@@ -1,4 +1,8 @@
 <?php
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
 require_once "auth.php";
 require_login();
 
@@ -17,8 +21,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         $stmt = $pdo->prepare(
             "INSERT INTO albums
-            (store_id, album_title, artist, album_version, price, stock, added_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)"
+            (store_id, album_title, artist, album_version, price, stock, added_by, date_added)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)"
         );
 
         $stmt->execute([
@@ -61,6 +65,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                  album_version = ?,
                  price = ?,
                  stock = ?,
+                 last_updated = CURRENT_TIMESTAMP,
                  last_updated_by = ?
              WHERE album_id = ?"
         );
@@ -129,7 +134,13 @@ $stores = $pdo->query(
     "SELECT * FROM stores ORDER BY store_name"
 )->fetchAll();
 
-$albums = $pdo->query(
+$search = "";
+
+if (isset($_GET["search"])) {
+    $search = trim($_GET["search"]);
+}
+
+$stmt = $pdo->prepare(
     "SELECT a.*,
             s.store_name,
             CONCAT(u1.first_name, ' ', u1.last_name) AS added_by_name,
@@ -138,8 +149,21 @@ $albums = $pdo->query(
      LEFT JOIN stores s ON a.store_id = s.store_id
      LEFT JOIN users u1 ON a.added_by = u1.user_id
      LEFT JOIN users u2 ON a.last_updated_by = u2.user_id
+     WHERE a.album_title LIKE ?
+        OR a.artist LIKE ?
+        OR a.album_version LIKE ?
+        OR s.store_name LIKE ?
      ORDER BY a.album_id DESC"
-)->fetchAll();
+);
+
+$stmt->execute([
+    "%" . $search . "%",
+    "%" . $search . "%",
+    "%" . $search . "%",
+    "%" . $search . "%"
+]);
+
+$albums = $stmt->fetchAll();
 ?>
 
 <!DOCTYPE html>
@@ -208,6 +232,7 @@ $albums = $pdo->query(
             <label>Album Version</label>
             <input type="text" name="album_version"
                    value="<?php echo cleanOutput($edit_album["album_version"] ?? ""); ?>"
+                   required>
 
             <label>Price</label>
             <input type="number" name="price" step="0.01" min="0"
@@ -231,6 +256,18 @@ $albums = $pdo->query(
 
     <h2>Album Records</h2>
 
+    <form method="GET" action="albums.php">
+        <input
+            type="text"
+            name="search"
+            placeholder="Search album title, artist, version, or store"
+            value="<?php echo htmlspecialchars($search); ?>"
+        >
+
+        <button type="submit">Search</button>
+        <a href="albums.php">Clear Search</a>
+    </form>
+
     <div class="table-container">
         <table>
             <tr>
@@ -243,6 +280,7 @@ $albums = $pdo->query(
                 <th>Stock</th>
                 <th>Added By</th>
                 <th>Last Updated By</th>
+                <th>Date Added</th>
                 <th>Actions</th>
             </tr>
 
@@ -257,6 +295,7 @@ $albums = $pdo->query(
                     <td><?php echo $album["stock"]; ?></td>
                     <td><?php echo cleanOutput($album["added_by_name"] ?? "Unknown"); ?></td>
                     <td><?php echo cleanOutput($album["updated_by_name"] ?? "Not updated"); ?></td>
+                    <td><?php echo htmlspecialchars($album["date_added"] ?? "Not available"); ?></td>
                     <td>
                         <a href="albums.php?edit=<?php echo $album["album_id"]; ?>">Edit</a>
 
@@ -273,5 +312,6 @@ $albums = $pdo->query(
         </table>
     </div>
 </div>
+
 </body>
 </html>
